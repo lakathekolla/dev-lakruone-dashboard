@@ -266,8 +266,8 @@ function parse_adyen_summary(string $payloadStr): ?array {
     <div class="card">
         <div class="flex" style="margin-bottom: 0.5rem;">
             <div>
-                <div style="font-weight: 600; font-size: 0.95rem;">Recent Webhooks (Max <?= MAX_LOGS ?>)</div>
-                <div class="hint">Auto-cleared after 3 minutes &bull; Keeping latest <?= MAX_LOGS ?> events</div>
+                <div style="font-weight: 600; font-size: 0.95rem;">Recent Webhooks (Latest <?= MAX_LOGS ?>)</div>
+                <div class="hint">Keeping the latest <?= MAX_LOGS ?> received webhooks</div>
             </div>
             <?php if (count($logs) > 0): ?>
                 <form method="POST" style="display:inline;">
@@ -279,15 +279,12 @@ function parse_adyen_summary(string $payloadStr): ?array {
 
         <?php if (empty($logs)): ?>
             <div class="hint" style="text-align: center; padding: 2.5rem 0; background: #0d1117; border-radius: 8px; border: 1px dashed #30363d; margin-top: 0.75rem;">
-                No active webhooks. Incoming webhooks will appear here and auto-clear after 3 minutes.
+                No webhooks received yet. Incoming webhooks will appear here.
             </div>
         <?php else: ?>
             <div style="display: flex; flex-direction: column; gap: 0.75rem;">
                 <?php foreach ($logs as $idx => $l): 
                     $summary = parse_adyen_summary($l['payload'] ?? '');
-                    $ts = $l['timestamp'] ?? (isset($l['date'], $l['time']) ? strtotime($l['date'] . ' ' . date('Y') . ' ' . $l['time']) : time());
-                    $ageSec = max(0, time() - $ts);
-                    $remainingSec = max(0, MAX_LOG_AGE_SECONDS - $ageSec);
                 ?>
                     <div class="webhook-card" id="webhook-<?= htmlspecialchars($l['id'] ?? $idx) ?>">
                         <!-- Header -->
@@ -305,8 +302,8 @@ function parse_adyen_summary(string $payloadStr): ?array {
                             </div>
 
                             <div style="display: flex; align-items: center; gap: 0.5rem;">
-                                <span class="hint mono" style="font-size: 0.75rem;" title="<?= htmlspecialchars($l['date'] . ' ' . $l['time']) ?>">
-                                    <?= htmlspecialchars($l['time']) ?> (expires in <?= gmdate("i\m s\s", $remainingSec) ?>)
+                                <span class="hint mono" style="font-size: 0.75rem;">
+                                    <?= htmlspecialchars(($l['date'] ?? '') . ' ' . ($l['time'] ?? '')) ?>
                                 </span>
                                 <form method="POST" style="display:inline;">
                                     <input type="hidden" name="action" value="replay">
