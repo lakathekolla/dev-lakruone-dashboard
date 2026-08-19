@@ -1,0 +1,13 @@
+Options -Indexes
+RewriteEngine On
+
+# Block direct access to data directory and sensitive files
+RewriteRule ^data/ - [F,L]
+RewriteRule ^config\.php$ - [F,L]
+RewriteRule ^\.env$ - [F,L]
+
+# Route all webhook paths (with or without /api) to webhook.php
+RewriteRule ^api/.*$ webhook.php [L,QSA]
+RewriteRule ^webhook(/.*)?$ webhook.php [L,QSA]
+RewriteRule ^webhooks(/.*)?$ webhook.php [L,QSA]
+RewriteRule ^adyen(/.*)?$ webhook.php [L,QSA]
