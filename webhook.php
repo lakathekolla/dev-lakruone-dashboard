@@ -82,7 +82,7 @@ if (!empty($config['forwarding_enabled']) && !empty($rawTarget)) {
     $res = curl_exec($ch);
     $fCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
+    unset($ch);
 
     $duration = round((microtime(true) - $t0) * 1000, 1);
     $fStatus = $err ? ('Fail: ' . $err) : ("HTTP $fCode");
@@ -91,6 +91,7 @@ if (!empty($config['forwarding_enabled']) && !empty($rawTarget)) {
 // Log event
 add_log([
     'id' => substr(md5(uniqid()), 0, 8),
+    'timestamp' => time(),
     'time' => date('H:i:s'),
     'date' => date('M d'),
     'path' => $requestPath,
@@ -100,7 +101,7 @@ add_log([
     'code' => $fCode,
     'status' => $fStatus,
     'ms' => $duration,
-    'payload' => mb_substr($body, 0, 3000)
+    'payload' => mb_substr($body, 0, 25000)
 ]);
 
 // Acknowledge Adyen
