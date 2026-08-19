@@ -29,6 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             clear_logs();
             $msg = 'Logs cleared.';
         } elseif ($action === 'test') {
+            $rawTarget = trim($_POST['target_url'] ?? '');
+            if (!empty($rawTarget) && $rawTarget !== ($config['target_url'] ?? '')) {
+                $config['target_url'] = $rawTarget;
+                $config['forwarding_enabled'] = isset($_POST['forwarding_enabled']);
+                save_config($config);
+            }
             $target = trim($config['target_url'] ?? '');
             $testPath = $_POST['test_path'] ?? '/api/webhooks/adyen/reports';
             if (!$target) {
@@ -38,18 +44,88 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $baseHost = (!empty($parsed['scheme']) && !empty($parsed['host'])) ? ($parsed['scheme'] . '://' . $parsed['host'] . (!empty($parsed['port']) ? ':' . $parsed['port'] : '')) : rtrim($target, '/');
                 $testUrl = $baseHost . $testPath;
 
+                if (strpos($testPath, 'reports') !== false) {
+                    $testPayload = json_encode([
+                        'data' => [
+                            'balancePlatform' => 'GastroMaster',
+                            'creationDate' => date('c'),
+                            'id' => 'balanceplatform_payout_report_' . date('Y_m_d') . '.csv',
+                            'downloadUrl' => 'https://balanceplatform-test.adyen.com/balanceplatform/reportDownload/v1/test.csv',
+                            'fileName' => 'balanceplatform_payout_report_' . date('Y_m_d') . '.csv',
+                            'reportType' => 'balanceplatform_payout_report'
+                        ],
+                        'environment' => 'test',
+                        'timestamp' => gmdate('Y-m-d\TH:i:s\Z'),
+                        'type' => 'balancePlatform.report.created'
+                    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                } else {
+                    $testPayload = json_encode([
+                        'live' => 'false',
+                        'notificationItems' => [
+                            [
+                                'NotificationRequestItem' => [
+                                    'additionalData' => [
+                                        'cardSummary' => '1111',
+                                        'paymentMethodVariant' => 'visa',
+                                        'authCode' => '123456',
+                                        'alias' => 'G' . rand(100000000000000, 999999999999999)
+                                    ],
+                                    'amount' => [
+                                        'currency' => 'EUR',
+                                        'value' => 2500
+                                    ],
+                                    'eventCode' => 'AUTHORISATION',
+                                    'eventDate' => date('c'),
+                                    'merchantAccountCode' => 'GastroMaster_Merchant_TEST',
+                                    'merchantReference' => 'TEST-' . rand(1000, 9999),
+                                    'operations' => ['CANCEL', 'CAPTURE'],
+                                    'paymentMethod' => 'visa',
+                                    'pspReference' => 'TST' . strtoupper(substr(md5(uniqid()), 0, 13)),
+                                    'reason' => '123456:1111:03/2030',
+                                    'success' => 'true'
+                                ]
+                            ]
+                        ]
+                    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                }
+
+                $t0 = microtime(true);
                 $ch = curl_init($testUrl);
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-                curl_setopt($ch, CURLOPT_TIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 6);
                 curl_setopt($ch, CURLOPT_POST, true);
-                curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['test' => true, 'event' => 'PING', 'time' => date('c')]));
-                curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json', 'X-Forwarded-By: dev.lakru.one-TestPing']);
+                curl_setopt($ch, CURLOPT_POSTFIELDS, $testPayload);
+                curl_setopt($ch, CURLOPT_HTTPHEADER, [
+                    'Content-Type: application/json',
+                    'X-Forwarded-By: dev.lakru.one-TestPing'
+                ]);
                 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+                curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
                 $res = curl_exec($ch);
                 $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
                 $err = curl_error($ch);
                 unset($ch);
-                $msg = $err ? "Ping Failed: $err" : "Ping to $testUrl: HTTP $code ($res)";
+
+                $duration = round((microtime(true) - $t0) * 1000, 1);
+                $fStatus = $err ? ('Fail: ' . $err) : ("HTTP $code");
+
+                add_log([
+                    'id' => substr(md5(uniqid()), 0, 8),
+                    'timestamp' => time(),
+                    'time' => date('H:i:s'),
+                    'date' => date('M d'),
+                    'path' => $testPath,
+                    'dest' => $testUrl,
+                    'ip' => $_SERVER['HTTP_X_FORWARDED_FOR'] ?? $_SERVER['REMOTE_ADDR'] ?? '127.0.0.1',
+                    'method' => 'POST',
+                    'code' => $code,
+                    'status' => $fStatus,
+                    'ms' => $duration,
+                    'payload' => $testPayload
+                ]);
+
+                $msg = $err ? "Ping Failed: $err" : "Test sent to $testPath (HTTP $code, {$duration}ms)";
             }
         } elseif ($action === 'replay') {
             $dest = trim($_POST['dest'] ?? '');
@@ -254,7 +330,7 @@ function parse_adyen_summary(string $payloadStr): ?array {
             <div class="flex">
                 <button type="submit" class="btn btn-blue">💾 Save Ngrok URL</button>
                 <div style="display: flex; gap: 0.4rem;">
-                    <button type="submit" formaction="/" name="action" value="test" class="btn btn-sm">🧪 Test /reports</button>
+                    <button type="submit" formaction="/" name="action" value="test" onclick="this.form.test_path.value='/api/webhooks/adyen/reports'" class="btn btn-sm">🧪 Test /reports</button>
                     <button type="submit" formaction="/" name="action" value="test" onclick="this.form.test_path.value='/api/webhooks/adyen/central'" class="btn btn-sm">🧪 Test /central</button>
                     <input type="hidden" name="test_path" value="/api/webhooks/adyen/reports">
                 </div>
